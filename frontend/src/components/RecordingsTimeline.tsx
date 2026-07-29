@@ -4,6 +4,12 @@ import type { CcamEvent, RecordingSegment } from "../lib/types";
 const PX_PER_MIN = 4;
 const DAY_MINUTES = 24 * 60;
 const TRACK_HEIGHT = 96;
+const NOMINAL_SEGMENT_MIN = 15; // matches SEGMENT_SECONDS in continuousRecorder.ts
+// Segment rotation isn't frame-perfect (ffmpeg cuts at the next keyframe,
+// not exactly on the second), so consecutive segments can touch a few
+// seconds late without that being a real recording gap. Anything wider than
+// this is treated as an actual break in coverage.
+const GAP_TOLERANCE_MIN = 1;
 
 const TYPE_DOT_CLASS: Record<CcamEvent["type"], string> = {
   person: "bg-accent",
@@ -38,16 +44,25 @@ export function RecordingsTimeline({
     return (ms - dayStartMs) / 60000;
   }
 
-  function segmentWidthMin(index: number) {
-    const seg = segments[index];
-    const next = segments[index + 1];
-    const startMin = minutesOf(new Date(seg.startedAt).getTime());
-    if (next) {
-      const nextStartMin = minutesOf(new Date(next.startedAt).getTime());
-      return Math.max(1, Math.min(15, nextStartMin - startMin));
+  // Coalesce back-to-back segments into single continuous coverage ranges so
+  // the track reads as one recording with real breaks, not as a row of
+  // separate clips lined up next to each other -- a true gap (recorder
+  // down, camera offline) still shows as an actual gap in the bar.
+  const coverageRanges = useMemo(() => {
+    const ranges: { startMin: number; endMin: number }[] = [];
+    for (const seg of segments) {
+      const startMin = Math.max(0, minutesOf(new Date(seg.startedAt).getTime()));
+      const endMin = Math.min(DAY_MINUTES, startMin + NOMINAL_SEGMENT_MIN);
+      const last = ranges[ranges.length - 1];
+      if (last && startMin <= last.endMin + GAP_TOLERANCE_MIN) {
+        last.endMin = Math.max(last.endMin, endMin);
+      } else {
+        ranges.push({ startMin, endMin });
+      }
     }
-    return 15;
-  }
+    return ranges;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segments, dayStartMs]);
 
   function seekFromClientX(clientX: number) {
     const el = trackRef.current;
@@ -92,15 +107,15 @@ export function RecordingsTimeline({
             </div>
           ))}
 
-          {/* Segments */}
+          {/* Continuous recording coverage */}
           <div className="absolute inset-x-0" style={{ top: 20, height: 36 }}>
-            {segments.map((seg, i) => (
+            {coverageRanges.map((range) => (
               <div
-                key={seg.file}
-                className="absolute top-0 h-full rounded bg-accent/60 hover:bg-accent"
+                key={range.startMin}
+                className="absolute top-0 h-full rounded bg-accent/60"
                 style={{
-                  left: minutesOf(new Date(seg.startedAt).getTime()) * PX_PER_MIN,
-                  width: segmentWidthMin(i) * PX_PER_MIN,
+                  left: range.startMin * PX_PER_MIN,
+                  width: (range.endMin - range.startMin) * PX_PER_MIN,
                 }}
               />
             ))}

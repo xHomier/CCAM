@@ -6,10 +6,19 @@ import type { Db } from "../db/client";
 import { cameras, events } from "../db/schema";
 import { continuousDir } from "./continuousRecorder";
 import { eventsDir } from "./clipExtractor";
+import { validateAndPruneSegment } from "./segmentValidation";
 
 const SEGMENT_FILE_RE = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.mp4$/;
 
-function pruneContinuous(recordingsPath: string, cameraId: number, retentionDays: number) {
+// Safety-net thresholds for the corruption check below: only worth an
+// ffprobe call for suspiciously small files (a legitimately short segment --
+// e.g. the camera briefly dropped mid-window -- is still valid footage and
+// must not be deleted just for being small), and only once a file is old
+// enough that it can't still be the segment ffmpeg is actively writing.
+const TINY_SEGMENT_BYTES = 256 * 1024;
+const MIN_AGE_FOR_CORRUPTION_CHECK_MS = 2 * 60 * 1000;
+
+async function pruneContinuous(recordingsPath: string, cameraId: number, retentionDays: number) {
   const dir = continuousDir(recordingsPath, cameraId);
   if (!fs.existsSync(dir)) return;
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
@@ -27,8 +36,26 @@ function pruneContinuous(recordingsPath: string, cameraId: number, retentionDays
       Number(mi),
       Number(s)
     );
+    const filePath = path.join(dir, name);
+
     if (startMs < cutoff) {
-      fs.unlinkSync(path.join(dir, name));
+      fs.unlinkSync(filePath);
+      continue;
+    }
+
+    // Nightly safety net for truncated/corrupt segments the on-exit check
+    // in continuousRecorder.ts missed (e.g. from a crash before this
+    // feature existed, or a kill that raced past that check).
+    try {
+      const stat = fs.statSync(filePath);
+      if (
+        stat.size < TINY_SEGMENT_BYTES &&
+        Date.now() - stat.mtimeMs > MIN_AGE_FOR_CORRUPTION_CHECK_MS
+      ) {
+        await validateAndPruneSegment(filePath);
+      }
+    } catch {
+      /* file may have been removed concurrently -- ignore */
     }
   }
 }
@@ -61,10 +88,10 @@ function pruneEventFiles(db: Db, recordingsPath: string, cameraId: number, reten
   }
 }
 
-export function runRetentionSweep(db: Db, recordingsPath: string) {
+export async function runRetentionSweep(db: Db, recordingsPath: string) {
   for (const camera of db.select().from(cameras).all()) {
     try {
-      pruneContinuous(recordingsPath, camera.id, camera.retentionDays);
+      await pruneContinuous(recordingsPath, camera.id, camera.retentionDays);
       pruneEventFiles(db, recordingsPath, camera.id, camera.eventRetentionDays);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -74,5 +101,14 @@ export function runRetentionSweep(db: Db, recordingsPath: string) {
 }
 
 export function scheduleRetentionJob(db: Db, recordingsPath: string, timezone: string) {
-  return cron.schedule("0 3 * * *", () => runRetentionSweep(db, recordingsPath), { timezone });
+  return cron.schedule(
+    "0 3 * * *",
+    () => {
+      runRetentionSweep(db, recordingsPath).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[retention] sweep failed:", err);
+      });
+    },
+    { timezone }
+  );
 }

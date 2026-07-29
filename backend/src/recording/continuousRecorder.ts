@@ -3,9 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Camera } from "../db/schema";
 import { rtspUrl } from "../go2rtc/client";
+import { validateAndPruneSegment } from "./segmentValidation";
 
 const SEGMENT_SECONDS = 900; // 15 min chunks
 const MIN_UPTIME_TO_RESET_BACKOFF_MS = 10_000;
+const SEGMENT_FILE_RE = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.mp4$/;
 
 export function continuousDir(recordingsPath: string, cameraId: number) {
   return path.join(recordingsPath, String(cameraId), "continuous");
@@ -136,9 +138,39 @@ export class ContinuousRecorder {
         `[recording] ffmpeg for camera ${this.camera.id} (${this.camera.name}) exited (code ${code}), restarting in ${this.restartDelayMs}ms`
       );
 
+      // An unclean exit (crash, camera drop, container kill) most often
+      // happens mid-write on whatever segment is newest -- check it and
+      // delete it if it's not a valid, playable mp4. A graceful stop()
+      // returns above before reaching here, so this never runs against a
+      // segment ffmpeg finalized cleanly on its own.
+      const newest = this.findNewestSegment();
+      if (newest) {
+        validateAndPruneSegment(newest).catch(() => {});
+      }
+
       const delay = this.restartDelayMs;
       this.restartDelayMs = Math.min(this.restartDelayMs * 2, 60_000);
       setTimeout(() => this.ensureDirAndSpawn(), delay);
     });
+  }
+
+  private findNewestSegment(): string | null {
+    const dir = continuousDir(this.recordingsPath, this.camera.id);
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return null;
+    }
+
+    let newest: { file: string; ms: number } | null = null;
+    for (const name of entries) {
+      const match = name.match(SEGMENT_FILE_RE);
+      if (!match) continue;
+      const [, y, mo, d, h, mi, s] = match;
+      const ms = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+      if (!newest || ms > newest.ms) newest = { file: path.join(dir, name), ms };
+    }
+    return newest?.file ?? null;
   }
 }

@@ -5,7 +5,15 @@ import { ContinuousPlayer } from "../components/ContinuousPlayer";
 import { RecordingsTimeline } from "../components/RecordingsTimeline";
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  // Must be the viewer's *local* calendar day, not toISOString()'s UTC day
+  // -- that flips to tomorrow/yesterday around midnight in any timezone
+  // ahead of/behind UTC, which is exactly why Recordings kept defaulting
+  // to the wrong day.
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function Recordings() {
