@@ -46,4 +46,4 @@ De nouveaux comptes se créent depuis Réglages → Utilisateurs (admin uniqueme
 
 ## WebRTC (optionnel)
 
-Le live view fonctionne par défaut en MSE via le proxy nginx, sans configuration réseau supplémentaire. Pour activer le WebRTC (latence plus faible), voir les commentaires dans `go2rtc/go2rtc.yaml` — nécessite d'exposer le port UDP/TCP `8555` et de définir l'IP LAN du serveur comme candidat ICE.
+Le live view fonctionne par défaut en MSE via WebSocket, sans configuration réseau supplémentaire. go2rtc tourne avec sa config par défaut (pas de fichier monté — un montage relatif vers un fichier du dépôt ne se résout pas de façon fiable sous un stack Portainer en mode "Repository", qui ne clone pas l'arbre complet du dépôt à côté du fichier compose). Pour activer le WebRTC (latence plus faible), il faudrait fournir un `candidates` ICE à go2rtc — par ex. via le bloc `configs:` inline de Docker Compose (contenu YAML directement dans `docker-compose.yml`, sans dépendre d'un fichier sur l'hôte) plutôt qu'un bind mount.

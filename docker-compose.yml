@@ -38,8 +38,14 @@ services:
     restart: unless-stopped
     environment:
       - TZ=${TZ}
-    volumes:
-      - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml
+    # No mounted go2rtc.yaml: every setting we need (api :1984, webrtc
+    # :8555, empty streams) is already go2rtc's own built-in default, and a
+    # relative bind mount to a repo file doesn't reliably resolve under
+    # Portainer's "Repository" stack deployment (it doesn't check out the
+    # full repo tree next to the compose file, only the compose file
+    # itself) -- Docker then silently creates an empty directory at the
+    # mount target instead of erroring, which broke go2rtc's own config
+    # writes (PUT /api/streams persists to this file).
     ports:
       # Only needed if you enable WebRTC live view (lower latency than the
       # default MSE). MSE/HLS work through the nginx proxy without this.
