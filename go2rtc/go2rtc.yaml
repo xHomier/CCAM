@@ -1,0 +1,22 @@
+# Bootstrap config for go2rtc. Cameras are NOT listed here manually -- the
+# CCAM backend registers/updates each camera's RTSP source via go2rtc's own
+# HTTP API (PUT /api/streams?name=...&src=...) whenever a camera is saved,
+# so this file only needs to configure the service itself.
+#
+# MSE/HLS live view works out of the box through the nginx /live/ proxy
+# (plain HTTP, no extra ports). WebRTC gives lower latency but needs UDP
+# connectivity straight to this container for ICE -- if you use it, map
+# host port 8555 (tcp+udp) in docker-compose.yml and uncomment the
+# candidates line below with your server's LAN IP.
+api:
+  listen: ":1984"
+
+webrtc:
+  listen: ":8555"
+  # candidates:
+  #   - 192.168.1.10:8555
+
+streams: {}
+
+log:
+  level: debug

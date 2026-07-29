@@ -1,0 +1,43 @@
+services:
+  proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+      - go2rtc
+
+  backend:
+    build: ./backend
+    init: true
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - NODE_ENV=production
+      - DB_PATH=/data/ccam.sqlite
+      - RECORDINGS_PATH=/recordings
+      - GO2RTC_API_URL=http://go2rtc:1984
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - SESSION_KEY=${SESSION_KEY}
+    volumes:
+      - ./data/sqlite:/data
+      - ${NAS_MOUNT_PATH}:/recordings
+    depends_on:
+      - go2rtc
+
+  go2rtc:
+    image: alexxit/go2rtc:1.9.4
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml
+    ports:
+      # Only needed if you enable WebRTC live view (lower latency than the
+      # default MSE). MSE/HLS work through the nginx proxy without this.
+      - "8555:8555/tcp"
+      - "8555:8555/udp"

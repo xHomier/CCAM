@@ -1,0 +1,119 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import type { Camera } from "../db/schema";
+import { rtspUrl } from "../go2rtc/client";
+
+const SEGMENT_SECONDS = 900; // 15 min chunks
+const MIN_UPTIME_TO_RESET_BACKOFF_MS = 10_000;
+
+export function continuousDir(recordingsPath: string, cameraId: number) {
+  return path.join(recordingsPath, String(cameraId), "continuous");
+}
+
+export class ContinuousRecorder {
+  private proc: ChildProcessWithoutNullStreams | null = null;
+  private stopped = false;
+  private restartDelayMs = 2000;
+  private spawnedAt = 0;
+
+  constructor(
+    private camera: Camera,
+    private recordingsPath: string
+  ) {}
+
+  start() {
+    this.stopped = false;
+    fs.mkdirSync(continuousDir(this.recordingsPath, this.camera.id), { recursive: true });
+    this.spawnFfmpeg();
+  }
+
+  stop() {
+    this.stopped = true;
+    this.proc?.kill("SIGTERM");
+    this.proc = null;
+  }
+
+  /** Restarts ffmpeg only if a field affecting the recorded stream actually changed. */
+  updateCamera(camera: Camera) {
+    const streamAffectingFieldsChanged =
+      camera.continuousStream !== this.camera.continuousStream ||
+      camera.host !== this.camera.host ||
+      camera.rtspPort !== this.camera.rtspPort ||
+      camera.username !== this.camera.username ||
+      camera.password !== this.camera.password ||
+      camera.channel !== this.camera.channel;
+
+    this.camera = camera;
+    if (streamAffectingFieldsChanged) {
+      this.stop();
+      this.start();
+    }
+  }
+
+  private spawnFfmpeg() {
+    if (this.stopped) return;
+
+    const src = rtspUrl(this.camera, this.camera.continuousStream);
+    const outPattern = path.join(
+      continuousDir(this.recordingsPath, this.camera.id),
+      "%Y-%m-%d_%H-%M-%S.mp4"
+    );
+
+    const args = [
+      "-nostdin",
+      "-loglevel",
+      "warning",
+      "-rtsp_transport",
+      "tcp",
+      "-i",
+      src,
+      "-an",
+      "-c",
+      "copy",
+      "-f",
+      "segment",
+      "-segment_time",
+      String(SEGMENT_SECONDS),
+      "-reset_timestamps",
+      "1",
+      "-strftime",
+      "1",
+      // Fragmented mp4 per segment: the plain mp4 muxer writes the moov atom
+      // (metadata) only after all frames, which some browsers refuse to
+      // play back progressively -- this is what caused the "unsupported
+      // MIME type" error in the video element.
+      "-segment_format_options",
+      "movflags=frag_keyframe+empty_moov+default_base_moof",
+      outPattern,
+    ];
+
+    // Force UTC for the strftime segment filenames regardless of the
+    // container's TZ config -- our own code parses those filenames back
+    // into Date objects and needs an unambiguous, guaranteed-consistent
+    // time base rather than hoping ffmpeg and Node agree on a local zone.
+    this.proc = spawn("ffmpeg", args, { env: { ...process.env, TZ: "UTC" } });
+    this.spawnedAt = Date.now();
+
+    this.proc.stderr.on("data", () => {
+      /* ffmpeg is chatty on stderr even when healthy; swallow by default */
+    });
+
+    this.proc.on("exit", (code) => {
+      if (this.stopped) return;
+
+      if (Date.now() - this.spawnedAt > MIN_UPTIME_TO_RESET_BACKOFF_MS) {
+        this.restartDelayMs = 2000;
+      }
+
+      // eslint-disable-next-line no-console
+      console.error(
+        `[recording] ffmpeg for camera ${this.camera.id} (${this.camera.name}) exited (code ${code}), restarting in ${this.restartDelayMs}ms`
+      );
+
+      const delay = this.restartDelayMs;
+      this.restartDelayMs = Math.min(this.restartDelayMs * 2, 60_000);
+      setTimeout(() => this.spawnFfmpeg(), delay);
+    });
+  }
+}
