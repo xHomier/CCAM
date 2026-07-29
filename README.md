@@ -10,13 +10,24 @@ Webapp de surveillance auto-hébergée pour caméras Reolink (RLC-810A et compat
 
 ## Prérequis avant le premier démarrage
 
-1. **Monter le partage NAS** sur la machine hôte (SMB ou NFS, via `/etc/fstab` ou équivalent) à un chemin de ton choix, p. ex. `/mnt/nas/ccam`. Le conteneur `backend` doit pouvoir y écrire.
+Cette configuration cible un déploiement Linux/Portainer sur le même réseau que les caméras. Elle ne fonctionne **pas** telle quelle sur Docker Desktop (Windows/Mac) — le réseau macvlan et le driver NFS de volume sont spécifiques à un hôte Docker Linux.
+
+1. **Créer le réseau macvlan** sur l'hôte Docker (une fois, en dehors de Compose), par ex. :
+   ```bash
+   docker network create -d macvlan \
+     --subnet=10.2.5.0/24 --gateway=10.2.5.1 \
+     -o parent=eth0 lan
+   ```
+   Adapter le sous-réseau/interface (`parent`) à ton réseau réel.
 2. Copier `.env.example` en `.env` et remplir :
    - `TZ` — fuseau horaire (doit être cohérent pour les horodatages d'enregistrement/rétention).
-   - `NAS_MOUNT_PATH` — chemin hôte du montage NAS de l'étape 1.
+   - `PROXY_LAN_IP` — IP statique du proxy sur le réseau macvlan (doit être libre sur ce sous-réseau).
+   - `NAS_NFS_ADDR` / `NAS_NFS_PATH` — adresse du serveur NFS et chemin d'export dédié à CCAM (pas partagé avec une autre appli NVR).
    - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — premier compte admin (créé automatiquement au premier démarrage si la base est vide). Change le mot de passe par défaut.
    - `SESSION_KEY` — clé de chiffrement des cookies de session, générer avec `openssl rand -hex 32`.
 3. Ajouter tes caméras via l'UI (Réglages → Caméras, compte admin requis) : IP, identifiants RTSP et identifiants de l'API HTTP Reolink.
+
+**Note macvlan** : un hôte Docker ne peut généralement pas joindre directement ses propres conteneurs macvlan (limitation connue du driver). Si `cloudflared` tourne directement sur l'hôte plutôt qu'en conteneur sur le même réseau `lan`, vérifie qu'il peut bien atteindre `${PROXY_LAN_IP}` — sinon, accès de secours via l'hôte sur le port `HTTP_PORT`.
 
 ## Démarrage
 

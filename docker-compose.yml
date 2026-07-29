@@ -6,6 +6,10 @@ services:
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:80"
+    networks:
+      default: {}
+      lan:
+        ipv4_address: ${PROXY_LAN_IP}
     depends_on:
       - backend
       - go2rtc
@@ -24,8 +28,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - SESSION_KEY=${SESSION_KEY}
     volumes:
-      - ./data/sqlite:/data
-      - ${NAS_MOUNT_PATH}:/recordings
+      - ccam_db:/data
+      - ccam_recordings:/recordings
     depends_on:
       - go2rtc
 
@@ -41,3 +45,26 @@ services:
       # default MSE). MSE/HLS work through the nginx proxy without this.
       - "8555:8555/tcp"
       - "8555:8555/udp"
+
+networks:
+  # Pre-existing macvlan on the host (created outside Compose) so the proxy
+  # gets a real, dedicated LAN IP instead of only being reachable through
+  # the Docker host's own address.
+  lan:
+    external: true
+
+volumes:
+  # Plain local Docker volume -- the SQLite DB doesn't need to live on the
+  # NAS, just needs to survive container recreation.
+  ccam_db:
+    driver: local
+  # NFS-backed volume for recordings, mounted directly by the Docker NFS
+  # volume driver (no host-level fstab entry needed). Uses its own
+  # dedicated folder, separate from other NVR apps (e.g. Frigate) sharing
+  # the same NAS, so they don't write into each other's storage.
+  ccam_recordings:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${NAS_NFS_ADDR},rw,nfsvers=4,hard"
+      device: ":${NAS_NFS_PATH}"
