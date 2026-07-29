@@ -1,0 +1,29 @@
+# Local development override (Docker Desktop on Windows/Mac). `docker
+# compose` auto-merges this with docker-compose.yml whenever both are
+# present in the same directory -- no extra -f flags needed to test
+# locally. The Portainer/production stack explicitly targets only
+# docker-compose.yml as its compose path, so this file has no effect there.
+#
+# What it changes vs. production:
+# - "lan" becomes a normal Compose-managed bridge network instead of a
+#   pre-existing external macvlan (Docker Desktop can't attach to a host
+#   macvlan the way a Linux Docker host can). Set PROXY_LAN_IP in your
+#   local .env to an address inside the subnet below, e.g. 172.28.55.200.
+# - Recordings storage becomes a plain local Docker volume instead of the
+#   NFS-backed one, since there's no NAS reachable from a local dev box.
+services:
+  backend:
+    volumes:
+      - ccam_recordings_local:/recordings
+
+networks:
+  lan:
+    external: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.55.0/24
+
+volumes:
+  ccam_recordings_local:
+    driver: local
