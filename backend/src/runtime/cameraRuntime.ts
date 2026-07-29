@@ -43,7 +43,13 @@ export class CameraRuntime {
     this.runtimes.set(camera.id, { poller, recorder });
 
     poller.start();
-    recorder.start();
+
+    try {
+      recorder.start();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[recording] failed to start recorder for camera ${camera.id}:`, err);
+    }
 
     try {
       await syncStream(this.go2rtcApiUrl, camera);

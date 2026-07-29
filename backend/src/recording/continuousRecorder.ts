@@ -24,7 +24,32 @@ export class ContinuousRecorder {
 
   start() {
     this.stopped = false;
-    fs.mkdirSync(continuousDir(this.recordingsPath, this.camera.id), { recursive: true });
+    this.ensureDirAndSpawn();
+  }
+
+  /**
+   * Creating the storage directory can fail independently of ffmpeg (e.g.
+   * the NAS/NFS mount isn't ready yet, or the export path doesn't exist).
+   * That must not throw out of start() -- it would abort the whole
+   * camera-create/update request and leave live view + AI polling broken
+   * too, even though recording is the only thing actually affected. Retry
+   * on the same backoff schedule as ffmpeg crashes instead.
+   */
+  private ensureDirAndSpawn() {
+    if (this.stopped) return;
+    try {
+      fs.mkdirSync(continuousDir(this.recordingsPath, this.camera.id), { recursive: true });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[recording] could not create storage dir for camera ${this.camera.id} (${this.camera.name}), retrying in ${this.restartDelayMs}ms:`,
+        err
+      );
+      const delay = this.restartDelayMs;
+      this.restartDelayMs = Math.min(this.restartDelayMs * 2, 60_000);
+      setTimeout(() => this.ensureDirAndSpawn(), delay);
+      return;
+    }
     this.spawnFfmpeg();
   }
 
@@ -113,7 +138,7 @@ export class ContinuousRecorder {
 
       const delay = this.restartDelayMs;
       this.restartDelayMs = Math.min(this.restartDelayMs * 2, 60_000);
-      setTimeout(() => this.spawnFfmpeg(), delay);
+      setTimeout(() => this.ensureDirAndSpawn(), delay);
     });
   }
 }

@@ -5,6 +5,7 @@ import { publishEvent } from "../sse/eventBus";
 import { ReolinkClient, type AiType } from "./client";
 
 const CLOSE_AFTER_CONSECUTIVE_OFF_POLLS = 3;
+const MAX_BACKOFF_MS = 60_000;
 
 interface TypeState {
   openEventId: number | null;
@@ -17,6 +18,7 @@ export class CameraPoller {
   private timer: NodeJS.Timeout | null = null;
   private busy = false;
   private stopped = false;
+  private consecutiveFailures = 0;
   private state = new Map<AiType, TypeState>();
 
   constructor(
@@ -65,7 +67,15 @@ export class CameraPoller {
 
   private scheduleNext() {
     if (this.stopped) return;
-    this.timer = setTimeout(() => this.poll(), this.camera.pollIntervalMs);
+    // Back off exponentially on repeated failures (e.g. a login rejection)
+    // instead of hammering the camera every pollIntervalMs -- that's what
+    // was draining the camera's own anti-bruteforce allowance and turning
+    // one bad login into a lockout.
+    const delay =
+      this.consecutiveFailures > 0
+        ? Math.min(this.camera.pollIntervalMs * 2 ** this.consecutiveFailures, MAX_BACKOFF_MS)
+        : this.camera.pollIntervalMs;
+    this.timer = setTimeout(() => this.poll(), delay);
   }
 
   private async poll() {
@@ -78,6 +88,7 @@ export class CameraPoller {
     try {
       const enabledTypes = this.enabledTypes();
       const active = await this.client.getActiveAiTypes(enabledTypes);
+      this.consecutiveFailures = 0;
       const now = new Date();
 
       for (const type of enabledTypes) {
@@ -120,8 +131,12 @@ export class CameraPoller {
         }
       }
     } catch (err) {
+      this.consecutiveFailures += 1;
       // eslint-disable-next-line no-console
-      console.error(`[reolink] camera ${this.camera.id} (${this.camera.name}) poll failed:`, err);
+      console.error(
+        `[reolink] camera ${this.camera.id} (${this.camera.name}) poll failed (${this.consecutiveFailures} in a row):`,
+        err
+      );
     } finally {
       this.busy = false;
       this.scheduleNext();
