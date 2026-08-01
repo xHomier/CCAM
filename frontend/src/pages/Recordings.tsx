@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/apiClient";
 import type { Camera, CcamEvent, RecordingSegment } from "../lib/types";
 import { ContinuousPlayer } from "../components/ContinuousPlayer";
+import { Go2RtcPlayer } from "../components/Go2RtcPlayer";
 import { RecordingsTimeline } from "../components/RecordingsTimeline";
+
+// How far past the last recorded segment counts as "now". Playback can only
+// reach the end of the newest *finalised* segment, so anything beyond that is
+// the live edge rather than a hole in the recording.
+const LIVE_EDGE_TOLERANCE_MS = 30_000;
 
 function todayIso() {
   // Must be the viewer's *local* calendar day, not toISOString()'s UTC day
@@ -74,6 +80,25 @@ export function Recordings() {
     setSeekRequest((prev) => ({ atMs, nonce: (prev?.nonce ?? 0) + 1 }));
   }
 
+  // Scrubbing past the newest recorded segment on today's timeline means the
+  // viewer is asking for the present, so hand over to the live stream instead
+  // of stalling on a segment that doesn't exist yet.
+  const lastSegmentEndMs = useMemo(() => {
+    const last = sortedSegments[sortedSegments.length - 1];
+    if (!last) return null;
+    const previous = sortedSegments[sortedSegments.length - 2];
+    const spanMs = previous
+      ? new Date(last.startedAt).getTime() - new Date(previous.startedAt).getTime()
+      : 60_000;
+    return new Date(last.startedAt).getTime() + spanMs;
+  }, [sortedSegments]);
+
+  const showingLive =
+    date === todayIso() &&
+    currentTimeMs !== null &&
+    lastSegmentEndMs !== null &&
+    currentTimeMs > lastSegmentEndMs + LIVE_EDGE_TOLERANCE_MS;
+
   return (
     <div className="safe-x flex h-full flex-col gap-2 py-2 md:gap-3 md:p-4">
       <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -98,7 +123,15 @@ export function Recordings() {
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-        {sortedSegments.length > 0 ? (
+        {showingLive && cameraId !== null ? (
+          <div className="relative aspect-video max-h-full w-full max-w-full md:h-full md:w-auto">
+            <Go2RtcPlayer streamName={`cam${cameraId}`} />
+            <span className="absolute left-2 top-2 z-20 flex items-center gap-1.5 rounded-lg bg-black/70 px-2 py-1 text-xs font-semibold text-danger backdrop-blur">
+              <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+              EN DIRECT
+            </span>
+          </div>
+        ) : sortedSegments.length > 0 ? (
           <div className="aspect-video max-h-full w-full max-w-full md:h-full md:w-auto">
             <ContinuousPlayer
               segments={sortedSegments}

@@ -17,13 +17,24 @@ body {
 
 /* iOS Safari zooms the viewport whenever a focused form control is under
    16px, and never zooms back out -- which is why every tap on the camera or
-   date picker left the UI zoomed in. Anything below 16px here re-triggers it. */
+   date picker left the UI zoomed in.
+   !important is required, not sloppiness: these are element selectors, so
+   Tailwind's `text-sm` utility (a class, and therefore more specific) wins
+   over them no matter where this rule sits in the file. */
 @media (max-width: 767px) {
   input,
   select,
   textarea {
-    font-size: 16px;
+    font-size: 16px !important;
   }
+}
+
+/* Nothing may exceed the viewport width: a single overflowing child makes the
+   whole page wider than the screen, which iOS renders as a zoomed-out layout
+   the user then has to pinch around. */
+html,
+body {
+  overflow-x: hidden;
 }
 
 /* Horizontal safe-area padding: with viewport-fit=cover the page extends into

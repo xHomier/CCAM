@@ -5,12 +5,15 @@ import type { Camera } from "../db/schema";
 import { rtspUrl } from "../go2rtc/client";
 import { validateAndPruneSegment } from "./segmentValidation";
 
-// Short segments, deliberately. These are fragmented MP4 (empty_moov), which
-// carries no duration in the header and no seek index, so a browser has to
-// pull the whole file before it can play or seek within it. At 15 minutes
-// that meant fetching 150-350 MB just to start playback -- the reason
-// recordings took so long to open. Two minutes keeps each file around 45 MB.
-const SEGMENT_SECONDS = 120;
+/**
+ * One minute per file, and short on purpose.
+ *
+ * Segments are finalised MP4 (see spawnFfmpeg), so the file currently being
+ * written has no moov yet and cannot be played -- the recordings API hides it.
+ * That means this value is also how far behind "now" playback can reach, so
+ * keeping it small keeps the timeline usable right up to the present.
+ */
+export const SEGMENT_SECONDS = 60;
 const MIN_UPTIME_TO_RESET_BACKOFF_MS = 10_000;
 const SEGMENT_FILE_RE = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.mp4$/;
 
@@ -111,12 +114,21 @@ export class ContinuousRecorder {
       "1",
       "-strftime",
       "1",
-      // Fragmented mp4 per segment: the plain mp4 muxer writes the moov atom
-      // (metadata) only after all frames, which some browsers refuse to
-      // play back progressively -- this is what caused the "unsupported
-      // MIME type" error in the video element.
-      "-segment_format_options",
-      "movflags=frag_keyframe+empty_moov+default_base_moof",
+      // Ordinary, finalised MP4 -- explicitly NOT fragmented.
+      //
+      // These were previously written with frag_keyframe+empty_moov, which
+      // leaves no moov atom: no duration and no seek index. iOS Safari will
+      // not play such a file through a plain <video src> and just showed a
+      // black frame, and desktop browsers had to download the entire file
+      // before they could start or seek.
+      //
+      // The segment muxer closes each file as it rotates, so every completed
+      // segment gets a proper moov and plays natively everywhere; browsers
+      // range-request the tail for the index, which the backend serves (206).
+      // The trade-off is that the in-progress file is unplayable until it
+      // rotates, so the recordings API filters it out.
+      "-segment_format",
+      "mp4",
       outPattern,
     ];
 

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { cameras } from "../../db/schema";
-import { continuousDir } from "../../recording/continuousRecorder";
+import { continuousDir, SEGMENT_SECONDS } from "../../recording/continuousRecorder";
 
 const SEGMENT_FILE_RE = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.mp4$/;
 
@@ -61,7 +61,18 @@ export default async function recordingRoutes(fastify: FastifyInstance) {
         });
       }
 
-      return segments.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+      segments.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+
+      // Drop the segment ffmpeg is still writing. Its moov atom is only
+      // written when the file rotates, so serving it hands the player a file
+      // it cannot decode -- a black frame that never resolves. A segment can
+      // only still be open if it started less than one segment ago.
+      const newest = segments[segments.length - 1];
+      if (newest && Date.now() - newest.startedAt.getTime() < SEGMENT_SECONDS * 1000) {
+        segments.pop();
+      }
+
+      return segments;
     }
   );
 }
