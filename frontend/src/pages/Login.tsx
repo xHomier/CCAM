@@ -18,12 +18,21 @@ export function Login() {
     return <Navigate to={from} replace />;
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
+    // Read the values straight off the form rather than trusting React state:
+    // iOS password autofill (and some third-party keyboards) can populate the
+    // fields without firing the events React listens to, which would submit
+    // two empty strings and look like a rejected password.
+    const form = new FormData(e.currentTarget);
+    const submittedUsername = (String(form.get("username") ?? "") || username).trim();
+    const submittedPassword = String(form.get("password") ?? "") || password;
+
     try {
-      await login(username.trim(), password);
+      await login(submittedUsername, submittedPassword);
       navigate("/live", { replace: true });
     } catch (err) {
       // Distinguish rejected credentials from the server being unreachable or
@@ -61,6 +70,7 @@ export function Login() {
                 the phone. */}
             <input
               id="username"
+              name="username"
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -79,6 +89,7 @@ export function Login() {
             </label>
             <input
               id="password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
