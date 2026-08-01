@@ -6,15 +6,20 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // The service worker is disabled and actively uninstalls itself.
+      //
+      // It pinned phones to a stale precached bundle: after the first
+      // redeploy, iOS kept serving the old app shell and its login request
+      // failed before ever reaching the network, so no POST /api/auth/login
+      // appeared in the server logs and every subsequent fix was invisible on
+      // mobile while desktop (which revalidates far more eagerly) was fine.
+      //
+      // Offline support has no value for a live-camera viewer, so caching the
+      // shell was pure liability. The manifest below still makes the app
+      // installable and standalone on iOS, which is the part actually wanted.
+      selfDestroying: true,
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icon-mark.svg"],
-      workbox: {
-        // The SPA navigation fallback must never answer for the API, the
-        // recordings files or the go2rtc endpoints -- otherwise the installed
-        // PWA (the only place the service worker is really active) can serve
-        // index.html in place of a real backend response.
-        navigateFallbackDenylist: [/^\/api\//, /^\/recordings\//, /^\/live\//],
-      },
       manifest: {
         name: "CCAM",
         short_name: "CCAM",
