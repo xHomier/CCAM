@@ -23,10 +23,19 @@ export function Login() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(username, password);
+      await login(username.trim(), password);
       navigate("/live", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? "Identifiants invalides." : "Erreur de connexion.");
+      // Distinguish rejected credentials from the server being unreachable or
+      // erroring -- collapsing both into one message made a proxy/session
+      // problem look identical to a typo.
+      if (err instanceof ApiError) {
+        setError(
+          err.status === 401 ? "Identifiants invalides." : `Erreur serveur (${err.status}).`
+        );
+      } else {
+        setError("Impossible de joindre le serveur.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -46,6 +55,10 @@ export function Login() {
             <label htmlFor="username" className="text-sm font-medium text-muted">
               Nom d'utilisateur
             </label>
+            {/* iOS defaults a text input to sentence capitalisation, so typing
+                "admin" actually submits "Admin" -- and autocorrect can rewrite
+                it outright. That is why login worked on desktop but never on
+                the phone. */}
             <input
               id="username"
               autoFocus
@@ -53,6 +66,9 @@ export function Login() {
               onChange={(e) => setUsername(e.target.value)}
               className="rounded-xl border border-border bg-surface2 px-3 py-2.5 text-sm outline-none focus:border-accent"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
             />
           </div>

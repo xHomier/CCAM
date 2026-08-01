@@ -11,11 +11,12 @@ export async function bootstrapAdmin(db: Db, env: Env) {
     return;
   }
 
+  // Trimmed: a trailing space in .env (easy to leave, impossible to see)
+  // would otherwise be baked into the username and reject every login.
+  const username = env.ADMIN_USERNAME.trim();
   const passwordHash = await bcrypt.hash(env.ADMIN_PASSWORD, 10);
-  db.insert(users)
-    .values({ username: env.ADMIN_USERNAME, passwordHash, role: "admin" })
-    .run();
+  db.insert(users).values({ username, passwordHash, role: "admin" }).run();
 
   // eslint-disable-next-line no-console
-  console.log(`Created initial admin user "${env.ADMIN_USERNAME}"`);
+  console.log(`Created initial admin user "${username}"`);
 }

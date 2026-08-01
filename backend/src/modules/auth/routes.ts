@@ -1,11 +1,11 @@
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { users } from "../../db/schema";
 
 const loginSchema = z.object({
-  username: z.string().min(1),
+  username: z.string().trim().min(1),
   password: z.string().min(1),
 });
 
@@ -16,10 +16,14 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid request" });
     }
 
+    // Usernames are matched case-insensitively and whitespace-tolerantly.
+    // A phone keyboard capitalises the first letter and can append a space,
+    // so an exact binary comparison (SQLite's default for TEXT) rejected the
+    // same credentials that worked when typed on a desktop keyboard.
     const user = fastify.db
       .select()
       .from(users)
-      .where(eq(users.username, body.data.username))
+      .where(sql`lower(trim(${users.username})) = lower(${body.data.username})`)
       .get();
 
     if (!user || user.disabled) {

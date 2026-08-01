@@ -1,11 +1,11 @@
 import bcrypt from "bcryptjs";
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { users } from "../../db/schema";
 
 const createSchema = z.object({
-  username: z.string().min(1),
+  username: z.string().trim().min(1),
   password: z.string().min(8),
   role: z.enum(["admin", "user"]).default("user"),
 });
@@ -55,10 +55,12 @@ export default async function userRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: body.error.flatten().fieldErrors });
       }
 
+      // Case-insensitive, matching how login resolves a username -- otherwise
+      // "Bob" and "bob" could both exist and login would pick one arbitrarily.
       const existing = fastify.db
         .select()
         .from(users)
-        .where(eq(users.username, body.data.username))
+        .where(sql`lower(trim(${users.username})) = lower(${body.data.username})`)
         .get();
       if (existing) {
         return reply.code(409).send({ error: "Username already taken" });
