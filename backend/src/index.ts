@@ -17,7 +17,11 @@ import { scheduleRetentionJob } from "./recording/retentionJob";
 
 async function main() {
   const env = loadEnv();
-  const fastify = Fastify({ logger: true });
+  // The backend is only ever reached through the nginx proxy on the internal
+  // Docker network, so the forwarded headers it sets can be trusted -- and
+  // must be, for request.protocol to report the client's real scheme (used to
+  // decide whether the session cookie gets the Secure attribute).
+  const fastify = Fastify({ logger: true, trustProxy: true });
 
   await fastify.register(configPlugin, env);
   await fastify.register(dbPlugin);

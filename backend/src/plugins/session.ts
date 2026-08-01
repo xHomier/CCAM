@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import cookie from "@fastify/cookie";
 import fp from "fastify-plugin";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 const COOKIE_NAME = "ccam_session";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
@@ -76,6 +77,28 @@ function deserialize(raw: string | undefined, key: Buffer): SessionData {
   }
 }
 
+/**
+ * `secure` has to be decided per request, not hard-coded: the same backend is
+ * reached both over plain HTTP on the LAN and over HTTPS through Cloudflare.
+ * A Secure cookie is silently dropped by the browser on the plain-HTTP
+ * entrypoint, so forcing it on would break LAN login outright -- while
+ * leaving it off over HTTPS is what let Safari/WebKit treat the session
+ * cookie as low-trust and evict it.
+ *
+ * TLS is terminated upstream (Cloudflare -> cloudflared -> nginx), so the
+ * backend always sees plain HTTP on the socket; `request.protocol` reflects
+ * the client's real scheme only because Fastify runs with `trustProxy` and
+ * nginx forwards the original X-Forwarded-Proto.
+ */
+function cookieOptions(request: FastifyRequest) {
+  return {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: request.protocol === "https",
+  };
+}
+
 export default fp(async function sessionPlugin(fastify: FastifyInstance) {
   await fastify.register(cookie);
 
@@ -90,15 +113,16 @@ export default fp(async function sessionPlugin(fastify: FastifyInstance) {
   fastify.addHook("onSend", async (request, reply) => {
     if (!request.session?.changed) return;
     if (request.session.isCleared) {
-      reply.clearCookie(COOKIE_NAME, { path: "/" });
+      reply.clearCookie(COOKIE_NAME, cookieOptions(request));
     } else {
       reply.setCookie(COOKIE_NAME, request.session.serialize(key), {
-        path: "/",
-        httpOnly: true,
-        sameSite: "lax",
-        // The app is expected to run over plain HTTP on a trusted LAN by
-        // default (see README); flip this on once TLS is in front of it.
-        secure: false,
+        ...cookieOptions(request),
+        // Without an explicit lifetime this is a *browser-session* cookie,
+        // discarded whenever the browsing session ends. Desktop browsers keep
+        // that session alive for days, but iOS drops it as soon as the tab is
+        // evicted or the app is backgrounded -- which is why logging in
+        // appeared to work on desktop and never stuck on the phone.
+        maxAge: SESSION_MAX_AGE_SECONDS,
       });
     }
   });

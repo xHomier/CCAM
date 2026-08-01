@@ -8,6 +8,13 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icon-mark.svg"],
+      workbox: {
+        // The SPA navigation fallback must never answer for the API, the
+        // recordings files or the go2rtc endpoints -- otherwise the installed
+        // PWA (the only place the service worker is really active) can serve
+        // index.html in place of a real backend response.
+        navigateFallbackDenylist: [/^\/api\//, /^\/recordings\//, /^\/live\//],
+      },
       manifest: {
         name: "CCAM",
         short_name: "CCAM",
