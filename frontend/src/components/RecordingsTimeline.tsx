@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import type { CcamEvent, RecordingSegment } from "../lib/types";
 
 const DAY_MINUTES = 24 * 60;
-const NOMINAL_SEGMENT_MIN = 15; // matches SEGMENT_SECONDS in continuousRecorder.ts
+// Each segment's length is derived from when the next one starts rather than
+// assumed: the recorder's segment duration has changed over time, so a day can
+// legitimately mix long older files with short newer ones.
+const FALLBACK_SEGMENT_MIN = 2;
+// Upper bound for the trailing segment, whose length nothing else reveals.
+const MAX_SEGMENT_MIN = 15;
 // Segment rotation isn't frame-perfect (ffmpeg cuts at the next keyframe,
 // not exactly on the second), so consecutive segments can touch a few
 // seconds late without that being a real recording gap. Anything wider than
@@ -129,10 +134,23 @@ export function RecordingsTimeline({
   // the track reads as one recording with real breaks, not as a row of
   // separate clips lined up next to each other.
   const coverageRanges = useMemo(() => {
+    const starts = segments.map((seg) =>
+      clamp((new Date(seg.startedAt).getTime() - dayStartMs) / 60_000, 0, DAY_MINUTES)
+    );
+
     const ranges: { startMin: number; endMin: number }[] = [];
-    for (const seg of segments) {
-      const startMin = clamp((new Date(seg.startedAt).getTime() - dayStartMs) / 60_000, 0, DAY_MINUTES);
-      const endMin = Math.min(DAY_MINUTES, startMin + NOMINAL_SEGMENT_MIN);
+    for (let i = 0; i < starts.length; i++) {
+      const startMin = starts[i];
+      // Length comes from the following segment's start. The last one has no
+      // successor, so fall back to the previous span -- which reflects the
+      // recorder's current segment duration rather than a hard-coded guess.
+      const nextStart = starts[i + 1];
+      const span =
+        nextStart !== undefined
+          ? Math.min(nextStart - startMin, MAX_SEGMENT_MIN)
+          : Math.min(i > 0 ? starts[i] - starts[i - 1] : FALLBACK_SEGMENT_MIN, MAX_SEGMENT_MIN);
+      const endMin = Math.min(DAY_MINUTES, startMin + Math.max(span, 0));
+
       const last = ranges[ranges.length - 1];
       if (last && startMin <= last.endMin + GAP_TOLERANCE_MIN) {
         last.endMin = Math.max(last.endMin, endMin);

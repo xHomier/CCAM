@@ -78,19 +78,26 @@ export async function extractEventClip(db: Db, recordingsPath: string, event: Ev
   const segments = listSegments(dir);
   if (segments.length === 0) return;
 
-  let coveringIndex = -1;
+  // Collect *every* segment overlapping the window, not just a pair: segments
+  // are short enough that an event of any real length spans several files, and
+  // stopping at two silently truncated the clip.
+  let firstIndex = -1;
   for (let i = segments.length - 1; i >= 0; i--) {
     if (segments[i].startMs <= windowStartMs) {
-      coveringIndex = i;
+      firstIndex = i;
       break;
     }
   }
-  const segA = coveringIndex >= 0 ? segments[coveringIndex] : segments[0];
-  const segB =
-    coveringIndex >= 0 && coveringIndex + 1 < segments.length
-      ? segments[coveringIndex + 1]
-      : undefined;
-  const spansTwoFiles = segB !== undefined && segB.startMs < windowEndMs;
+  if (firstIndex < 0) firstIndex = 0;
+
+  const covering: Segment[] = [segments[firstIndex]];
+  for (let i = firstIndex + 1; i < segments.length; i++) {
+    // A segment starting after the window ends contributes nothing.
+    if (segments[i].startMs >= windowEndMs) break;
+    covering.push(segments[i]);
+  }
+  const spansMultipleFiles = covering.length > 1;
+  const segA = covering[0];
 
   const outDir = eventsDir(recordingsPath, event.cameraId);
   fs.mkdirSync(outDir, { recursive: true });
@@ -101,7 +108,7 @@ export async function extractEventClip(db: Db, recordingsPath: string, event: Ev
   const durationSec = (windowEndMs - windowStartMs) / 1000;
 
   try {
-    if (!spansTwoFiles) {
+    if (!spansMultipleFiles) {
       await runFfmpeg([
         "-ss",
         offsetSec.toFixed(2),
@@ -124,7 +131,7 @@ export async function extractEventClip(db: Db, recordingsPath: string, event: Ev
       const listFile = path.join(outDir, `${event.id}.concat.txt`);
       fs.writeFileSync(
         listFile,
-        [segA.file, segB!.file].map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n")
+        covering.map((s) => `file '${s.file.replace(/'/g, "'\\''")}'`).join("\n")
       );
       const combinedPath = path.join(outDir, `${event.id}.combined.mp4`);
       await runFfmpeg(["-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", combinedPath]);

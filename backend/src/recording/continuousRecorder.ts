@@ -5,7 +5,12 @@ import type { Camera } from "../db/schema";
 import { rtspUrl } from "../go2rtc/client";
 import { validateAndPruneSegment } from "./segmentValidation";
 
-const SEGMENT_SECONDS = 900; // 15 min chunks
+// Short segments, deliberately. These are fragmented MP4 (empty_moov), which
+// carries no duration in the header and no seek index, so a browser has to
+// pull the whole file before it can play or seek within it. At 15 minutes
+// that meant fetching 150-350 MB just to start playback -- the reason
+// recordings took so long to open. Two minutes keeps each file around 45 MB.
+const SEGMENT_SECONDS = 120;
 const MIN_UPTIME_TO_RESET_BACKOFF_MS = 10_000;
 const SEGMENT_FILE_RE = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.mp4$/;
 

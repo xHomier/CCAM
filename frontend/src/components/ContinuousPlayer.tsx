@@ -79,7 +79,20 @@ export function ContinuousPlayer({
       video.onloadedmetadata = start;
     }
 
-    preload(slot === 0 ? 1 : 0, segments[idx + 1]);
+    // Hold the next segment back until the one being watched is playable.
+    // Kicking both off together split the available bandwidth exactly when
+    // the viewer is waiting on the first frame, which is the slowest moment.
+    const otherSlot: 0 | 1 = slot === 0 ? 1 : 0;
+    const next = segments[idx + 1];
+    if (!next) {
+      preload(otherSlot, undefined);
+      return;
+    }
+    if (video.readyState >= 3 /* HAVE_FUTURE_DATA */) {
+      preload(otherSlot, next);
+    } else {
+      video.addEventListener("canplay", () => preload(otherSlot, next), { once: true });
+    }
   }
 
   useEffect(() => {
