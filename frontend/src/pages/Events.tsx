@@ -55,7 +55,7 @@ export function Events() {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="safe-x flex flex-col gap-3 py-3 md:gap-4 md:p-4">
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={cameraFilter}

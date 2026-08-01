@@ -10,6 +10,28 @@ body,
 
 body {
   font-family: "Inter", system-ui, sans-serif;
+  /* iOS pans the whole page when a fixed element is near the edge; this keeps
+     the shell put and lets the inner <main> do the scrolling. */
+  overscroll-behavior-y: none;
+}
+
+/* iOS Safari zooms the viewport whenever a focused form control is under
+   16px, and never zooms back out -- which is why every tap on the camera or
+   date picker left the UI zoomed in. Anything below 16px here re-triggers it. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Horizontal safe-area padding: with viewport-fit=cover the page extends into
+   the rounded corners / Dynamic Island gutters, so content needs to be inset
+   by at least the device's own inset. */
+.safe-x {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
 }
 
 ::-webkit-scrollbar {

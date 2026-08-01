@@ -36,10 +36,15 @@ export function Live() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2 xl:grid-cols-3">
+    <div className="safe-x grid grid-cols-1 gap-3 py-3 md:gap-4 md:p-4 lg:grid-cols-2 xl:grid-cols-3">
       {enabledCameras.map((camera) => (
-        <div key={camera.id} className="rounded-xl border border-border bg-surface p-3">
-          <h2 className="mb-2 text-sm font-medium text-text">{camera.name}</h2>
+        <div
+          key={camera.id}
+          className="overflow-hidden rounded-xl border border-border bg-surface p-2 md:p-3"
+        >
+          <h2 className="mb-1.5 px-1 text-sm font-medium text-text md:mb-2 md:px-0">
+            {camera.name}
+          </h2>
           <Go2RtcPlayer streamName={`cam${camera.id}`} />
         </div>
       ))}

@@ -18,12 +18,19 @@ const MSE_CODECS =
 export function Go2RtcPlayer({ streamName }: { streamName: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(true);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     setError(null);
+    setConnecting(true);
+
+    // Clear the overlay as soon as real frames are on screen, so a slow
+    // producer start reads as "connecting" rather than a dead black box.
+    const onPlaying = () => setConnecting(false);
+    video.addEventListener("playing", onPlaying);
 
     // Safari/iOS: native HLS.
     const isSafari =
@@ -32,12 +39,12 @@ export function Go2RtcPlayer({ streamName }: { streamName: string }) {
     if (isSafari) {
       video.src = `/live/api/stream.m3u8?src=${encodeURIComponent(streamName)}`;
       video.play().catch(() => {});
-      return;
+      return () => video.removeEventListener("playing", onPlaying);
     }
 
     if (!("MediaSource" in window)) {
       setError("Ce navigateur ne supporte pas la lecture du flux en direct.");
-      return;
+      return () => video.removeEventListener("playing", onPlaying);
     }
 
     let cancelled = false;
@@ -148,6 +155,7 @@ export function Go2RtcPlayer({ streamName }: { streamName: string }) {
 
     return () => {
       cancelled = true;
+      video.removeEventListener("playing", onPlaying);
       ws?.close();
       if (video.src.startsWith("blob:")) URL.revokeObjectURL(video.src);
       video.src = "";
@@ -159,6 +167,12 @@ export function Go2RtcPlayer({ streamName }: { streamName: string }) {
       <ZoomableMedia>
         <video ref={videoRef} className="h-full w-full" controls autoPlay muted playsInline />
       </ZoomableMedia>
+      {connecting && !error && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted/40 border-t-accent" />
+          Connexion au flux…
+        </div>
+      )}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-4 text-center text-sm text-danger">
           {error}

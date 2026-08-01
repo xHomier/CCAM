@@ -4,6 +4,7 @@ import { CameraPoller } from "../reolink/poller";
 import { ContinuousRecorder } from "../recording/continuousRecorder";
 import { extractEventClip } from "../recording/clipExtractor";
 import { syncStream, removeStream } from "../go2rtc/client";
+import { StreamWarmer } from "../go2rtc/streamWarmer";
 
 interface Runtime {
   poller: CameraPoller;
@@ -17,12 +18,15 @@ interface Runtime {
  */
 export class CameraRuntime {
   private runtimes = new Map<number, Runtime>();
+  private warmer: StreamWarmer;
 
   constructor(
     private db: Db,
     private recordingsPath: string,
     private go2rtcApiUrl: string
-  ) {}
+  ) {
+    this.warmer = new StreamWarmer(go2rtcApiUrl);
+  }
 
   async start() {
     const all = this.db.select().from(cameras).all();
@@ -57,9 +61,13 @@ export class CameraRuntime {
       // eslint-disable-next-line no-console
       console.error(`[go2rtc] failed to sync stream for camera ${camera.id}:`, err);
     }
+
+    // Only meaningful once the stream exists in go2rtc, hence after sync.
+    this.warmer.warm(camera.id);
   }
 
   private stopCamera(cameraId: number) {
+    this.warmer.stop(cameraId);
     const runtime = this.runtimes.get(cameraId);
     if (!runtime) return;
     runtime.poller.stop();
@@ -73,6 +81,7 @@ export class CameraRuntime {
    * container restart truncates/corrupts whatever segment was mid-write.
    */
   stopAll() {
+    this.warmer.stopAll();
     for (const runtime of this.runtimes.values()) {
       runtime.poller.stop();
       runtime.recorder.stop();
@@ -97,6 +106,11 @@ export class CameraRuntime {
         // eslint-disable-next-line no-console
         console.error(`[go2rtc] failed to sync stream for camera ${camera.id}:`, err);
       }
+      // syncStream may have replaced the source (host/credentials edited),
+      // which leaves the existing keep-warm consumer bound to the old
+      // producer -- reattach it to the new one.
+      this.warmer.stop(camera.id);
+      this.warmer.warm(camera.id);
     } else {
       await this.startCamera(camera);
     }

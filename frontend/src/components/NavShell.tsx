@@ -63,22 +63,27 @@ export function NavShell() {
       </aside>
 
       {/* Mobile top bar */}
-      <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 md:hidden">
+      <header className="safe-x flex items-center justify-between border-b border-border bg-surface py-2.5 md:hidden">
         <div className="flex items-center gap-2">
-          <Logo size={26} />
+          <Logo size={24} />
           <span className="text-base font-semibold tracking-tight">CCAM</span>
         </div>
-        <button onClick={() => logout()} className="text-muted hover:text-danger">
+        <button
+          onClick={() => logout()}
+          aria-label="Déconnexion"
+          className="-mr-1 p-1 text-muted hover:text-danger"
+        >
           <IconLogout />
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto bg-bg pb-20 md:pb-0">
+      {/* Bottom padding clears the fixed nav *and* the home indicator below it. */}
+      <main className="flex-1 overflow-y-auto bg-bg pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
         <Outlet />
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-surface md:hidden">
+      <nav className="safe-x fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
         {items.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -86,7 +91,7 @@ export function NavShell() {
             end
             className={({ isActive }) =>
               [
-                "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium",
+                "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium leading-tight",
                 isActive ? "text-accent" : "text-muted",
               ].join(" ")
             }
