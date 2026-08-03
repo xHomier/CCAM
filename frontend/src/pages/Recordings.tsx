@@ -30,6 +30,9 @@ export function Recordings() {
   const [events, setEvents] = useState<CcamEvent[]>([]);
   const [currentTimeMs, setCurrentTimeMs] = useState<number | null>(null);
   const [seekRequest, setSeekRequest] = useState<{ atMs: number; nonce: number } | null>(null);
+  const [playingPreview, setPlayingPreview] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Camera[]>("/cameras").then((cams) => {
@@ -49,19 +52,27 @@ export function Recordings() {
     const from = new Date(`${date}T00:00:00`).toISOString();
     const to = new Date(`${date}T23:59:59.999`).toISOString();
 
-    api
-      .get<RecordingSegment[]>(
-        `/recordings?cameraId=${cameraId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-      )
-      .then((segs) => {
-        setSegments(segs);
-        if (segs.length > 0) {
-          const sorted = [...segs].sort(
-            (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
-          );
-          seekTo(new Date(sorted[0].startedAt).getTime());
-        }
-      });
+    const range = `cameraId=${cameraId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+
+    // Prefer the light sub-stream copy: its files are a fraction of the size,
+    // which is what makes continuous scrubbing possible. Cameras recording
+    // the sub-stream directly (or days recorded before the preview copy
+    // existed) have none, so fall back to the primary recording.
+    (async () => {
+      let segs = await api.get<RecordingSegment[]>(`/recordings?${range}&variant=preview`);
+      let usedPreview = segs.length > 0;
+      if (!usedPreview) {
+        segs = await api.get<RecordingSegment[]>(`/recordings?${range}&variant=quality`);
+      }
+      setPlayingPreview(usedPreview);
+      setSegments(segs);
+      if (segs.length > 0) {
+        const sorted = [...segs].sort(
+          (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+        );
+        seekTo(new Date(sorted[0].startedAt).getTime());
+      }
+    })();
 
     api
       .get<CcamEvent[]>(
@@ -93,6 +104,33 @@ export function Recordings() {
     return new Date(last.startedAt).getTime() + spanMs;
   }, [sortedSegments]);
 
+  // The viewer plays the light copy, so an export has to resolve the
+  // main-quality file covering the same instant -- matched server-side by
+  // time, since the two recorders rotate independently and their filenames
+  // don't line up exactly.
+  async function exportCurrentMoment() {
+    if (cameraId === null || currentTimeMs === null) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const found = await api.get<{ file: string; url: string }>(
+        `/recordings/export?cameraId=${cameraId}&at=${encodeURIComponent(
+          new Date(currentTimeMs).toISOString()
+        )}`
+      );
+      const link = document.createElement("a");
+      link.href = found.url;
+      link.download = found.file;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      setExportError("Aucun enregistrement en qualité pour ce moment.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const showingLive =
     date === todayIso() &&
     currentTimeMs !== null &&
@@ -120,6 +158,24 @@ export function Recordings() {
           onChange={(e) => setDate(e.target.value)}
           className="min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 py-2 text-sm md:flex-none"
         />
+
+        {sortedSegments.length > 0 && !showingLive && (
+          <button
+            type="button"
+            onClick={exportCurrentMoment}
+            disabled={exporting || currentTimeMs === null}
+            className="rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+          >
+            {exporting ? "Export…" : "Exporter (qualité)"}
+          </button>
+        )}
+
+        {playingPreview && (
+          <span className="text-xs text-muted" title="La visionneuse lit le flux léger; l'export fournit la qualité complète.">
+            Aperçu léger
+          </span>
+        )}
+        {exportError && <span className="text-xs text-danger">{exportError}</span>}
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">

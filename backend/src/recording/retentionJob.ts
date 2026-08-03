@@ -4,7 +4,7 @@ import cron from "node-cron";
 import { and, eq, isNotNull, lt } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { cameras, events } from "../db/schema";
-import { continuousDir } from "./continuousRecorder";
+import { continuousDir, previewDir } from "./continuousRecorder";
 import { eventsDir } from "./clipExtractor";
 import { validateAndPruneSegment } from "./segmentValidation";
 
@@ -19,7 +19,11 @@ const TINY_SEGMENT_BYTES = 256 * 1024;
 const MIN_AGE_FOR_CORRUPTION_CHECK_MS = 2 * 60 * 1000;
 
 async function pruneContinuous(recordingsPath: string, cameraId: number, retentionDays: number) {
-  const dir = continuousDir(recordingsPath, cameraId);
+  await pruneContinuousDir(continuousDir(recordingsPath, cameraId), retentionDays);
+}
+
+/** Age-based prune of one directory of segments, plus the corruption safety net. */
+async function pruneContinuousDir(dir: string, retentionDays: number) {
   if (!fs.existsSync(dir)) return;
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
 
@@ -92,6 +96,12 @@ export async function runRetentionSweep(db: Db, recordingsPath: string) {
   for (const camera of db.select().from(cameras).all()) {
     try {
       await pruneContinuous(recordingsPath, camera.id, camera.retentionDays);
+      // The sub-stream viewing copy ages out on the same schedule -- without
+      // this it would accumulate indefinitely.
+      await pruneContinuousDir(
+        previewDir(recordingsPath, camera.id),
+        camera.retentionDays
+      );
       pruneEventFiles(db, recordingsPath, camera.id, camera.eventRetentionDays);
     } catch (err) {
       // eslint-disable-next-line no-console

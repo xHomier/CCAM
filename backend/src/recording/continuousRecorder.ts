@@ -21,6 +21,24 @@ export function continuousDir(recordingsPath: string, cameraId: number) {
   return path.join(recordingsPath, String(cameraId), "continuous");
 }
 
+/**
+ * Where the low-bitrate viewing copy lives. A separate folder so the primary
+ * recording -- the one clip extraction and export read -- keeps the exact
+ * path and layout it always had.
+ */
+export function previewDir(recordingsPath: string, cameraId: number) {
+  return path.join(recordingsPath, String(cameraId), "continuous_sub");
+}
+
+/**
+ * "quality" records the stream the camera is configured for; "preview"
+ * always records the sub-stream. The sub-stream is already encoded by the
+ * camera at a fraction of the main bitrate (~10% storage overhead), so
+ * recording it in parallel costs no CPU and gives the Recordings page files
+ * small enough to scrub through fluidly.
+ */
+export type RecorderVariant = "quality" | "preview";
+
 export class ContinuousRecorder {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private stopped = false;
@@ -29,8 +47,19 @@ export class ContinuousRecorder {
 
   constructor(
     private camera: Camera,
-    private recordingsPath: string
+    private recordingsPath: string,
+    private variant: RecorderVariant = "quality"
   ) {}
+
+  private get stream(): "main" | "sub" {
+    return this.variant === "preview" ? "sub" : this.camera.continuousStream;
+  }
+
+  private get outputDir(): string {
+    return this.variant === "preview"
+      ? previewDir(this.recordingsPath, this.camera.id)
+      : continuousDir(this.recordingsPath, this.camera.id);
+  }
 
   start() {
     this.stopped = false;
@@ -48,7 +77,7 @@ export class ContinuousRecorder {
   private ensureDirAndSpawn() {
     if (this.stopped) return;
     try {
-      fs.mkdirSync(continuousDir(this.recordingsPath, this.camera.id), { recursive: true });
+      fs.mkdirSync(this.outputDir, { recursive: true });
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(
@@ -89,9 +118,9 @@ export class ContinuousRecorder {
   private spawnFfmpeg() {
     if (this.stopped) return;
 
-    const src = rtspUrl(this.camera, this.camera.continuousStream);
+    const src = rtspUrl(this.camera, this.stream);
     const outPattern = path.join(
-      continuousDir(this.recordingsPath, this.camera.id),
+      this.outputDir,
       "%Y-%m-%d_%H-%M-%S.mp4"
     );
 
@@ -188,7 +217,7 @@ export class ContinuousRecorder {
   }
 
   private findNewestSegment(): string | null {
-    const dir = continuousDir(this.recordingsPath, this.camera.id);
+    const dir = this.outputDir;
     let entries: string[];
     try {
       entries = fs.readdirSync(dir);

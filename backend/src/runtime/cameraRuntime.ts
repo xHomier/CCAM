@@ -9,6 +9,17 @@ import { StreamWarmer } from "../go2rtc/streamWarmer";
 interface Runtime {
   poller: CameraPoller;
   recorder: ContinuousRecorder;
+  /**
+   * Parallel sub-stream recorder feeding the Recordings page a low-bitrate
+   * copy to scrub through (~10% extra storage, no CPU -- the camera encodes
+   * both streams anyway). Only exists when the primary recording is the main
+   * stream; if the primary is already sub, a copy would be identical.
+   */
+  previewRecorder?: ContinuousRecorder;
+}
+
+function wantsPreviewRecording(camera: Camera) {
+  return camera.continuousStream === "main";
 }
 
 /**
@@ -43,8 +54,11 @@ export class CameraRuntime {
         /* extractEventClip logs its own failures */
       });
     });
-    const recorder = new ContinuousRecorder(camera, this.recordingsPath);
-    this.runtimes.set(camera.id, { poller, recorder });
+    const recorder = new ContinuousRecorder(camera, this.recordingsPath, "quality");
+    const previewRecorder = wantsPreviewRecording(camera)
+      ? new ContinuousRecorder(camera, this.recordingsPath, "preview")
+      : undefined;
+    this.runtimes.set(camera.id, { poller, recorder, previewRecorder });
 
     poller.start();
 
@@ -53,6 +67,12 @@ export class CameraRuntime {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`[recording] failed to start recorder for camera ${camera.id}:`, err);
+    }
+    try {
+      previewRecorder?.start();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[recording] failed to start preview recorder for camera ${camera.id}:`, err);
     }
 
     try {
@@ -72,6 +92,7 @@ export class CameraRuntime {
     if (!runtime) return;
     runtime.poller.stop();
     runtime.recorder.stop();
+    runtime.previewRecorder?.stop();
     this.runtimes.delete(cameraId);
   }
 
@@ -85,6 +106,7 @@ export class CameraRuntime {
     for (const runtime of this.runtimes.values()) {
       runtime.poller.stop();
       runtime.recorder.stop();
+      runtime.previewRecorder?.stop();
     }
   }
 
@@ -100,6 +122,27 @@ export class CameraRuntime {
     if (runtime) {
       runtime.poller.updateCamera(camera);
       runtime.recorder.updateCamera(camera);
+
+      // Whether a preview recorder should exist depends on continuousStream,
+      // which this update may just have flipped.
+      if (wantsPreviewRecording(camera) && !runtime.previewRecorder) {
+        runtime.previewRecorder = new ContinuousRecorder(camera, this.recordingsPath, "preview");
+        try {
+          runtime.previewRecorder.start();
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[recording] failed to start preview recorder for camera ${camera.id}:`,
+            err
+          );
+        }
+      } else if (!wantsPreviewRecording(camera) && runtime.previewRecorder) {
+        runtime.previewRecorder.stop();
+        runtime.previewRecorder = undefined;
+      } else {
+        runtime.previewRecorder?.updateCamera(camera);
+      }
+
       try {
         await syncStream(this.go2rtcApiUrl, camera);
       } catch (err) {
