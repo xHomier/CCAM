@@ -123,12 +123,19 @@ export class ContinuousRecorder {
       // before they could start or seek.
       //
       // The segment muxer closes each file as it rotates, so every completed
-      // segment gets a proper moov and plays natively everywhere; browsers
-      // range-request the tail for the index, which the backend serves (206).
-      // The trade-off is that the in-progress file is unplayable until it
+      // segment gets a proper moov and plays natively everywhere. The
+      // trade-off is that the in-progress file is unplayable until it
       // rotates, so the recordings API filters it out.
       "-segment_format",
       "mp4",
+      // +faststart rewrites each segment as it closes to put the moov atom at
+      // the *front*. Without it the index sits at the tail, so a browser must
+      // range-request the end of the file before the first frame can render --
+      // an extra round-trip that is exactly where mobile playback feels slow.
+      // With it, playback starts off a single sequential read. The rewrite
+      // cost at rotation is negligible for one-minute files.
+      "-segment_format_options",
+      "movflags=+faststart",
       outPattern,
     ];
 

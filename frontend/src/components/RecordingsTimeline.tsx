@@ -4,8 +4,10 @@ import type { CcamEvent, RecordingSegment } from "../lib/types";
 const DAY_MINUTES = 24 * 60;
 // Each segment's length is derived from when the next one starts rather than
 // assumed: the recorder's segment duration has changed over time, so a day can
-// legitimately mix long older files with short newer ones.
-const FALLBACK_SEGMENT_MIN = 2;
+// legitimately mix long older files with short newer ones. The fallback only
+// applies to a lone segment with no neighbours; it matches the recorder's
+// current one-minute rotation.
+const FALLBACK_SEGMENT_MIN = 1;
 // Upper bound for the trailing segment, whose length nothing else reveals.
 const MAX_SEGMENT_MIN = 15;
 // Segment rotation isn't frame-perfect (ffmpeg cuts at the next keyframe,
