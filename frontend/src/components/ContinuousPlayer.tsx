@@ -29,6 +29,13 @@ export function ContinuousPlayer({
   const lastNonce = useRef<number | null>(null);
   const [activeSlot, setActiveSlot] = useState<0 | 1>(0);
   const activeSlotRef = useRef<0 | 1>(0);
+  // Identifies the most recent seek. Rapid scrubbing used to stack one
+  // "canplay" listener per seek, and when the video finally became playable
+  // they all fired back-to-back -- each preloading a different notion of the
+  // "next" segment, kicking off a burst of competing downloads that saturated
+  // the connection until even API calls stalled. Only the listener belonging
+  // to the latest seek is allowed to do anything.
+  const seekGeneration = useRef(0);
 
   function segmentIndexAt(atMs: number) {
     let idx = 0;
@@ -59,6 +66,7 @@ export function ContinuousPlayer({
     const idx = segmentIndexAt(atMs);
     const segment = segments[idx];
     currentIndex.current = idx;
+    const generation = ++seekGeneration.current;
 
     const slot = activeSlotRef.current;
     const video = videoRefs[slot].current;
@@ -88,10 +96,13 @@ export function ContinuousPlayer({
       preload(otherSlot, undefined);
       return;
     }
+    const preloadIfCurrent = () => {
+      if (seekGeneration.current === generation) preload(otherSlot, next);
+    };
     if (video.readyState >= 3 /* HAVE_FUTURE_DATA */) {
-      preload(otherSlot, next);
+      preloadIfCurrent();
     } else {
-      video.addEventListener("canplay", () => preload(otherSlot, next), { once: true });
+      video.addEventListener("canplay", preloadIfCurrent, { once: true });
     }
   }
 
@@ -142,6 +153,12 @@ export function ContinuousPlayer({
             muted
             controls
             playsInline
+            // "metadata" caps what a non-playing element fetches to the moov
+            // header (at the front of the file since +faststart). The default
+            // "auto" made the hidden slot download its entire segment, so
+            // every scrub cost a full extra file of bandwidth. Once a slot
+            // actually plays, the browser streams content on demand anyway.
+            preload="metadata"
             onTimeUpdate={() => handleTimeUpdate(slot)}
             onEnded={() => trySwapToNext(slot)}
             className={`absolute inset-0 h-full w-full rounded-xl bg-black ${
