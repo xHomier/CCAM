@@ -139,8 +139,17 @@ export class ContinuousRecorder {
     this.proc = spawn("ffmpeg", args, { env: { ...process.env, TZ: "UTC" } });
     this.spawnedAt = Date.now();
 
-    this.proc.stderr.on("data", () => {
-      /* ffmpeg is chatty on stderr even when healthy; swallow by default */
+    // ffmpeg is chatty on stderr even when healthy, so only surface lines that
+    // actually indicate a problem. Swallowing all of it hid the reason a
+    // segment came out unplayable -- e.g. the muxer reporting it cannot seek
+    // to finalise the file, which is precisely what leaves a black player.
+    this.proc.stderr.on("data", (chunk: Buffer) => {
+      for (const line of chunk.toString().split("\n")) {
+        if (/error|invalid|failed|unable|not supported|non seekable|no such/i.test(line)) {
+          // eslint-disable-next-line no-console
+          console.error(`[recording] ffmpeg (camera ${this.camera.id}): ${line.trim()}`);
+        }
+      }
     });
 
     this.proc.on("exit", (code) => {

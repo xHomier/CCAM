@@ -4,7 +4,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { events, type Event } from "../db/schema";
-import { continuousDir } from "./continuousRecorder";
+import { continuousDir, SEGMENT_SECONDS } from "./continuousRecorder";
 import { publishEvent } from "../sse/eventBus";
 
 const PRE_ROLL_SECONDS = 5;
@@ -66,16 +66,21 @@ export async function extractEventClip(db: Db, recordingsPath: string, event: Ev
   const windowStartMs = event.startedAt.getTime() - PRE_ROLL_SECONDS * 1000;
   const windowEndMs = (event.endedAt ?? new Date()).getTime() + POST_ROLL_SECONDS * 1000;
 
-  // The post-roll hasn't been recorded yet when an event closes, and the
-  // segment ffmpeg is currently writing hasn't flushed that far either.
-  // Wait for the window to actually exist on disk before cutting it out.
-  const waitMs = windowEndMs + 5000 - Date.now();
+  // Wait for the footage to exist *and* to be readable. Segments are plain
+  // MP4 now, so a file only gains its moov atom when it rotates -- until then
+  // ffmpeg cannot open it at all, and trying to cut a clip that reaches into
+  // the open segment failed outright, leaving the event with no clip and no
+  // thumbnail. Waiting a full segment past the window guarantees the last file
+  // it touches has been closed.
+  const waitMs = windowEndMs + (SEGMENT_SECONDS + 5) * 1000 - Date.now();
   if (waitMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   const dir = continuousDir(recordingsPath, event.cameraId);
-  const segments = listSegments(dir);
+  // Belt and braces: never feed ffmpeg a segment that cannot have rotated yet.
+  const finalizedBeforeMs = Date.now() - SEGMENT_SECONDS * 1000;
+  const segments = listSegments(dir).filter((s) => s.startMs <= finalizedBeforeMs);
   if (segments.length === 0) return;
 
   // Collect *every* segment overlapping the window, not just a pair: segments
