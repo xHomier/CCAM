@@ -118,14 +118,33 @@ export function Recordings() {
           new Date(currentTimeMs).toISOString()
         )}`
       );
-      const link = document.createElement("a");
-      link.href = found.url;
-      link.download = found.file;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch {
-      setExportError("Aucun enregistrement en qualité pour ce moment.");
+
+      const res = await fetch(found.url);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const file = new File([blob], found.file, { type: "video/mp4" });
+
+      // iOS ignores the download attribute and just opens the file inline,
+      // with no way to choose where it lands. The share sheet is the only
+      // route to "Enregistrer dans Fichiers" or "Enregistrer la vidéo"
+      // (Photos), so prefer it wherever the browser supports sharing files.
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: found.file });
+      } else {
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = found.file;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch (err) {
+      // Dismissing the share sheet rejects with AbortError; that's a choice,
+      // not a failure, so it must not surface as an error.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setExportError("Export impossible pour ce moment.");
     } finally {
       setExporting(false);
     }
