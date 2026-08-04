@@ -414,13 +414,17 @@ export function ContinuousPlayer({
 }
 
 function SkipIcon({ direction }: { direction: "back" | "forward" }) {
+  // The base paths point left (a double "«" chevron), which is already the
+  // correct shape for "back" -- the flip belongs on "forward" instead.
+  // These were swapped, which is why -10 previously showed a right-pointing
+  // icon and +10 a left-pointing one.
   return (
     <svg
       width="16"
       height="16"
       viewBox="0 0 24 24"
       aria-hidden="true"
-      style={{ transform: direction === "back" ? "scaleX(-1)" : undefined }}
+      style={{ transform: direction === "forward" ? "scaleX(-1)" : undefined }}
     >
       <path d="M11 6 L4 12 L11 18 Z" fill="currentColor" />
       <path d="M19 6 L12 12 L19 18 Z" fill="currentColor" />
