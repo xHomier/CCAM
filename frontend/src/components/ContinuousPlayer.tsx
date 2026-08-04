@@ -340,6 +340,21 @@ export function ContinuousPlayer({
       {/* Sibling of ZoomableMedia, not a child: inside it the buttons would be
           scaled by the digital zoom and their taps consumed by its pan
           handler. */}
+
+      {/* Speed row on its own, pinned to the top on mobile. In the bottom bar
+          it was competing for space with the transport buttons and the
+          fullscreen toggle on a narrow screen -- seven options plus four
+          other controls in one row meant it was mostly hidden behind
+          horizontal scroll. Desktop has the width to spare, so it stays
+          inline down there (hidden here via md:hidden). */}
+      <div
+        className={`absolute inset-x-0 top-0 z-20 flex items-center gap-1 overflow-x-auto bg-gradient-to-b from-black/80 to-transparent pb-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))] md:hidden ${
+          isFullscreen ? "" : "rounded-t-xl"
+        }`}
+      >
+        <SpeedButtons speed={speed} onChange={setSpeed} />
+      </div>
+
       <div
         className={`absolute inset-x-0 bottom-0 z-20 flex flex-wrap items-center gap-2 bg-gradient-to-t from-black/80 to-transparent pb-[max(0.5rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-6 ${
           isFullscreen ? "" : "rounded-b-xl"
@@ -383,21 +398,8 @@ export function ContinuousPlayer({
           <SkipIcon direction="forward" />
         </button>
 
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {SPEEDS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSpeed(s)}
-              className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold tabular-nums transition-colors ${
-                s === speed
-                  ? "bg-accent text-bg"
-                  : "bg-white/10 text-text backdrop-blur hover:bg-white/20"
-              }`}
-            >
-              {s}×
-            </button>
-          ))}
+        <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex">
+          <SpeedButtons speed={speed} onChange={setSpeed} />
         </div>
 
         <button
@@ -410,6 +412,34 @@ export function ContinuousPlayer({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Shared between the mobile speed row and the desktop bottom bar so the two never drift apart. */
+function SpeedButtons({
+  speed,
+  onChange,
+}: {
+  speed: number;
+  onChange: (s: number) => void;
+}) {
+  return (
+    <>
+      {SPEEDS.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => onChange(s)}
+          className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold tabular-nums transition-colors ${
+            s === speed
+              ? "bg-accent text-bg"
+              : "bg-white/10 text-text backdrop-blur hover:bg-white/20"
+          }`}
+        >
+          {s}×
+        </button>
+      ))}
+    </>
   );
 }
 
