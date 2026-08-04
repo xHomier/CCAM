@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecordingSegment } from "../lib/types";
+import { useElementFullscreen } from "../lib/useFullscreen";
+import { IconFullscreen } from "./icons";
 import { ZoomableMedia } from "./ZoomableMedia";
 
 // Lead time before a segment ends at which the next one is swapped in. This is
@@ -9,19 +11,6 @@ const NEAR_END_SECONDS = 0.35;
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 2, 4, 8] as const;
 const SKIP_SECONDS = 10;
-
-/**
- * `Element.requestFullscreen` on Safari/iOS is still exposed under its
- * WebKit-prefixed name in the TS DOM lib. Kept to a couple of narrow
- * interfaces rather than reaching for `any` at every call site.
- */
-interface FullscreenCapableElement extends HTMLElement {
-  webkitRequestFullscreen?: () => void;
-}
-interface FullscreenCapableDocument extends Document {
-  webkitFullscreenElement?: Element | null;
-  webkitExitFullscreen?: () => void;
-}
 
 /**
  * Plays a day's continuous recording across many 15-minute segment files
@@ -69,71 +58,7 @@ export function ContinuousPlayer({
   // render.
   const currentAbsMsRef = useRef<number | null>(null);
 
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  function isNativeFullscreen() {
-    const doc = document as FullscreenCapableDocument;
-    return (
-      (doc.fullscreenElement ?? null) === rootRef.current ||
-      (doc.webkitFullscreenElement ?? null) === rootRef.current
-    );
-  }
-
-  // Deliberately requests fullscreen on this wrapper <div>, never on the
-  // <video> elements. Calling fullscreen on a video is what hands playback to
-  // iOS's own AVPlayer chrome -- native controls, its own play/seek/AirPlay
-  // bar -- which is exactly the UI this component replaces. A plain element
-  // going fullscreen just grows to fill the screen and keeps rendering our
-  // own controls underneath.
-  async function enterFullscreen() {
-    const el = rootRef.current;
-    if (!el) return;
-    // Applied immediately regardless of what follows: on a browser with no
-    // Fullscreen API for arbitrary elements (pre-16.4 iOS Safari), this CSS
-    // state is the *only* fullscreen there is. Where the real API is
-    // available it simply doubles up with the UA's own fullscreen styling.
-    setIsFullscreen(true);
-    try {
-      const fsEl = el as FullscreenCapableElement;
-      if (fsEl.requestFullscreen) await fsEl.requestFullscreen();
-      else fsEl.webkitRequestFullscreen?.();
-    } catch {
-      /* denied or unsupported -- the CSS fallback above already covers it */
-    }
-  }
-
-  function exitFullscreen() {
-    if (isNativeFullscreen()) {
-      const doc = document as FullscreenCapableDocument;
-      if (doc.exitFullscreen) doc.exitFullscreen().catch(() => {});
-      else doc.webkitExitFullscreen?.();
-    }
-    setIsFullscreen(false);
-  }
-
-  function toggleFullscreen() {
-    if (isFullscreen) exitFullscreen();
-    else enterFullscreen();
-  }
-
-  // Catches the device's own exit gestures (swipe-down, Android back, Esc) so
-  // our CSS state doesn't stay stuck on after the browser has already left
-  // fullscreen.
-  useEffect(() => {
-    function handleChange() {
-      const doc = document as FullscreenCapableDocument;
-      if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
-        setIsFullscreen(false);
-      }
-    }
-    document.addEventListener("fullscreenchange", handleChange);
-    document.addEventListener("webkitfullscreenchange", handleChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", handleChange);
-      document.removeEventListener("webkitfullscreenchange", handleChange);
-    };
-  }, []);
+  const { ref: rootRef, isFullscreen, toggle: toggleFullscreen } = useElementFullscreen<HTMLDivElement>();
 
   /** Both elements share the rate so a swap can't visibly change speed. */
   useEffect(() => {
@@ -408,7 +333,7 @@ export function ContinuousPlayer({
           aria-label={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
           className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-text backdrop-blur transition-colors hover:bg-white/25"
         >
-          <FullscreenIcon active={isFullscreen} />
+          <IconFullscreen width={14} height={14} active={isFullscreen} />
         </button>
       </div>
     </div>
@@ -458,32 +383,6 @@ function SkipIcon({ direction }: { direction: "back" | "forward" }) {
     >
       <path d="M11 6 L4 12 L11 18 Z" fill="currentColor" />
       <path d="M19 6 L12 12 L19 18 Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function FullscreenIcon({ active }: { active: boolean }) {
-  // Corners pointing outward when entering fullscreen, inward when already
-  // in it -- the same expand/compress convention every video player uses.
-  return active ? (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M9 20 L9 15 L4 15 M15 20 L15 15 L20 15"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ) : (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }

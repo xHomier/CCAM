@@ -69,3 +69,23 @@ export function IconLogout(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/**
+ * Corners pointing outward to enter fullscreen, inward once already in it --
+ * the expand/compress convention every video player uses. Shared between the
+ * live view and the recordings player so the two can't drift apart.
+ */
+export function IconFullscreen({
+  active,
+  ...props
+}: SVGProps<SVGSVGElement> & { active?: boolean }) {
+  return (
+    <svg {...base(props)}>
+      {active ? (
+        <path d="M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M9 20 L9 15 L4 15 M15 20 L15 15 L20 15" />
+      ) : (
+        <path d="M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15" />
+      )}
+    </svg>
+  );
+}

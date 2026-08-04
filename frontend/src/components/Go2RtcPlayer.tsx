@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useElementFullscreen } from "../lib/useFullscreen";
+import { IconFullscreen } from "./icons";
 import { ZoomableMedia } from "./ZoomableMedia";
 
 // Codecs we tell go2rtc the browser can accept (standard go2rtc MSE handshake).
@@ -19,6 +21,7 @@ export function Go2RtcPlayer({ streamName }: { streamName: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(true);
+  const { ref: rootRef, isFullscreen, toggle: toggleFullscreen } = useElementFullscreen<HTMLDivElement>();
 
   useEffect(() => {
     const video = videoRef.current;
@@ -163,9 +166,28 @@ export function Go2RtcPlayer({ streamName }: { streamName: string }) {
   }, [streamName]);
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+    <div
+      ref={rootRef}
+      className={
+        isFullscreen
+          ? "fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-black"
+          : "relative aspect-video w-full overflow-hidden rounded-xl bg-black"
+      }
+    >
       <ZoomableMedia>
-        <video ref={videoRef} className="h-full w-full" controls autoPlay muted playsInline />
+        <video
+          ref={videoRef}
+          className="h-full w-full object-contain"
+          // No native controls: there is nothing here for them to offer --
+          // seeking a live stream isn't meaningful, and going through
+          // iOS/Android's own player chrome is exactly what the custom
+          // fullscreen button below replaces. playsInline keeps iOS from
+          // ever handing playback to that native chrome on its own, even
+          // without a tap on any control.
+          autoPlay
+          muted
+          playsInline
+        />
       </ZoomableMedia>
       {connecting && !error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted">
@@ -178,6 +200,16 @@ export function Go2RtcPlayer({ streamName }: { streamName: string }) {
           {error}
         </div>
       )}
+      <button
+        type="button"
+        onClick={toggleFullscreen}
+        aria-label={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
+        // Left corner deliberately: ZoomableMedia's own "Réinitialiser le
+        // zoom" badge sits bottom-right, and the two would overlap once zoomed.
+        className="absolute bottom-2 left-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-text backdrop-blur transition-colors hover:bg-white/25"
+      >
+        <IconFullscreen width={14} height={14} active={isFullscreen} />
+      </button>
     </div>
   );
 }
