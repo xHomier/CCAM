@@ -220,7 +220,7 @@ export function Recordings() {
       </div>
 
       {sortedSegments.length > 0 && (
-        <div className="shrink-0">
+        <div className="mb-3 shrink-0 md:mb-0">
           <RecordingsTimeline
             date={date}
             segments={sortedSegments}
