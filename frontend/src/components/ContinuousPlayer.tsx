@@ -348,7 +348,7 @@ export function ContinuousPlayer({
           horizontal scroll. Desktop has the width to spare, so it stays
           inline down there (hidden here via md:hidden). */}
       <div
-        className={`absolute inset-x-0 top-0 z-20 flex items-center gap-1 overflow-x-auto bg-gradient-to-b from-black/80 to-transparent pb-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))] md:hidden ${
+        className={`absolute inset-x-0 top-0 z-20 flex flex-wrap items-center justify-center gap-1 bg-gradient-to-b from-black/80 to-transparent pb-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))] md:hidden ${
           isFullscreen ? "" : "rounded-t-xl"
         }`}
       >
@@ -398,7 +398,7 @@ export function ContinuousPlayer({
           <SkipIcon direction="forward" />
         </button>
 
-        <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex">
+        <div className="hidden min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto md:flex">
           <SpeedButtons speed={speed} onChange={setSpeed} />
         </div>
 
